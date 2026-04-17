@@ -204,9 +204,15 @@ export default function App() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // 兼容性检查：iOS Safari 不支持 webm，需用 mp4
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
+        ? 'audio/webm' 
+        : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/aac');
+        
       const recorder = new MediaRecorder(stream, { 
-        mimeType: 'audio/webm',
-        audioBitsPerSecond: 64000 // Optimized for speech clarity vs file size
+        mimeType,
+        audioBitsPerSecond: 64000
       });
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
@@ -216,7 +222,7 @@ export default function App() {
       };
 
       recorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         const url = URL.createObjectURL(audioBlob);
         setAudioUrl(url);
         analyzeAudio(audioBlob);
@@ -315,18 +321,18 @@ export default function App() {
     <div className="min-h-screen bg-[#FDFCF8] font-sans text-gray-800 pb-20">
       <Header />
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-8 pt-6">
+      <main className="max-w-3xl mx-auto px-4 sm:px-8 pt-4 pb-10">
         <AnimatePresence mode="wait">
           {/* STAGE: INPUT */}
           {stage === 'input' && (
             <motion.div
               key="input"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="space-y-4"
             >
-              <div className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-orange-50 shadow-sm relative overflow-hidden">
+              <div className="bg-white rounded-[2rem] p-5 sm:p-8 border-2 border-orange-50 shadow-sm relative overflow-hidden">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
                     <div className="p-3 bg-blue-50 text-blue-500 rounded-2xl">
@@ -368,8 +374,8 @@ export default function App() {
                 )}
 
                 <textarea
-                  className="w-full h-48 sm:h-56 p-6 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-blue-400 focus:bg-white outline-none transition-all resize-none text-lg leading-relaxed text-gray-700 placeholder:text-gray-300"
-                  placeholder="在此输入英文段落..."
+                  className="w-full h-64 sm:h-72 p-5 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-blue-400 focus:bg-white outline-none transition-all resize-none text-base sm:text-lg leading-relaxed text-gray-700 placeholder:text-gray-300"
+                  placeholder="在此输入或粘贴想要学习的英文..."
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                 />
@@ -430,7 +436,7 @@ export default function App() {
                 </motion.div>
               )}
 
-              <div className="bg-white rounded-[2.5rem] p-6 sm:p-10 border-2 border-blue-50 shadow-sm relative overflow-hidden">
+              <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 border-2 border-blue-50 shadow-sm relative overflow-hidden">
                 {/* Processing Overlay */}
                 <AnimatePresence>
                   {isLoading && (
@@ -438,28 +444,28 @@ export default function App() {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4 text-center p-6"
+                      className="absolute inset-0 bg-white/95 backdrop-blur-md z-50 flex flex-col items-center justify-center gap-4 text-center p-6"
                     >
                       <div className="relative">
                         <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-500 rounded-full animate-spin" />
                         <Sparkles className="absolute inset-0 m-auto text-blue-500 animate-pulse" size={24} />
                       </div>
-                      <div>
-                        <p className="text-lg font-bold text-gray-900">AI 老师正在批改...</p>
-                        <p className="text-xs text-gray-400 mt-1">正在分析您的发音细节</p>
+                      <div className="space-y-1">
+                        <p className="text-lg font-bold text-gray-900">AI老师正在点评...</p>
+                        <p className="text-xs text-gray-400">正在分析您的发音与流畅度</p>
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
-                <div className="flex flex-col gap-5 sm:gap-8">
+                <div className="flex flex-col gap-6 sm:gap-8">
                   <div>
-                    <div className="text-2xl sm:text-3xl leading-[1.4] sm:leading-snug font-bold text-gray-900 mb-6 drop-shadow-sm">
+                    <div className="text-xl sm:text-3xl leading-relaxed sm:leading-snug font-bold text-gray-900 mb-4 sm:mb-6 drop-shadow-sm min-h-[4rem]">
                       {renderEnglishWithWords(sentences[currentSentenceIdx].english)}
                     </div>
-                    <div className="text-orange-500 text-sm sm:text-lg font-medium pt-5 border-t border-orange-100/50 flex items-start gap-2">
+                    <div className="text-orange-500 text-sm sm:text-lg font-medium pt-4 sm:pt-5 border-t border-orange-100/50 flex items-start gap-2">
                       <Languages size={16} className="mt-1 shrink-0 opacity-50" />
-                      {sentences[currentSentenceIdx].chinese}
+                      <span className="leading-normal">{sentences[currentSentenceIdx].chinese}</span>
                     </div>
                   </div>
 
