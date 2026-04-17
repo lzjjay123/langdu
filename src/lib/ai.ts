@@ -16,119 +16,55 @@ function getApiKey() {
 }
 
 export async function analyzePronunciation(referenceText: string, audioBase64: string, mimeType: string) {
-  const apiKey = getApiKey();
-  const prompt = `你是一位专业的少儿英语老师。
-参考文本: "${referenceText}"
-任务: 比较提供的音频与参考文本。
-1. 识别漏读(skipped)或发音错误(mispronounced)的单词。
-2. 给出 1-5 分的评分。
-3. 提供鼓励性的中文评语。
-4. 评估流利度。
-
-必须返回严格的 JSON 格式 (不要包含 Markdown 标记):
-{
-  "rating": 数字,
-  "feedback": "中文评语",
-  "corrections": [{"word": "单词", "errorType": "skipped" | "mispronounced", "suggestion": "中文建议"}],
-  "fluency": "流利度评价"
-}`;
-
   try {
-    const response = await fetch(DASHSCOPE_MULTIMODAL_ENDPOINT, {
+    const response = await fetch("/api/analyze", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Custom-Api-Key": localStorage.getItem('CUSTOM_DASHSCOPE_API_KEY') || ""
       },
-      body: JSON.stringify({
-        model: "qwen-audio-turbo",
-        input: {
-          messages: [
-            {
-              role: "user",
-              content: [
-                { audio: `data:${mimeType};base64,${audioBase64}` },
-                { text: prompt }
-              ]
-            }
-          ]
-        },
-        parameters: {
-          result_format: "message"
-        }
-      })
+      body: JSON.stringify({ referenceText, audioBase64, mimeType })
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || errorData.message || `API 请求失败: ${response.status}`);
-    }
-
     const data = await response.json();
-    let content = data.output.choices[0].message.content[0].text;
-    
-    // 兼容性处理：去除可能的 Markdown 标记
-    if (content.includes('```json')) {
-      content = content.split('```json')[1].split('```')[0].trim();
-    } else if (content.includes('```')) {
-      content = content.split('```')[1].split('```')[0].trim();
+    if (!response.ok) {
+      if (data.error?.includes("未配置 API Key")) {
+        const error: any = new Error("API 密钥未生效。");
+        error.isApiKeyError = true;
+        throw error;
+      }
+      throw new Error(data.error || "音频分析失败");
     }
-    
-    return JSON.parse(content);
+    return data;
   } catch (error: any) {
-    console.error("Alibaba Analysis API Error:", error);
-    throw new Error(error.message || "音频分析接口调用失败");
+    console.error("Client Analysis Error:", error);
+    throw error;
   }
 }
 
 export async function prepareLesson(text: string) {
-  const apiKey = getApiKey();
-  const prompt = `将以下英文文本切分为适合孩子学习的句子，并提供对应的中文翻译。
-文本: "${text}"
-
-返回 JSON 格式:
-{
-  "sentences": [
-    {
-      "english": "英文句子",
-      "chinese": "中文翻译"
-    }
-  ]
-}`;
-
   try {
-    const response = await fetch(DASHSCOPE_COMPATIBLE_ENDPOINT, {
+    const response = await fetch("/api/prepare", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Custom-Api-Key": localStorage.getItem('CUSTOM_DASHSCOPE_API_KEY') || ""
       },
-      body: JSON.stringify({
-        model: "qwen-plus",
-        messages: [
-          {
-            role: "system",
-            content: "你是一个专业的英语教育助手，只返回严格的 JSON 格式。"
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" }
-      })
+      body: JSON.stringify({ text })
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `API 请求失败: ${response.status}`);
-    }
-
     const data = await response.json();
-    const content = data.choices[0].message.content;
-    return JSON.parse(content);
-  } catch (error) {
-    console.error("Alibaba Prepare Error:", error);
+    if (!response.ok) {
+      if (data.error?.includes("未配置 API Key")) {
+        const error: any = new Error("API 密钥未生效。");
+        error.isApiKeyError = true;
+        throw error;
+      }
+      throw new Error(data.error || "准备课程失败");
+    }
+    return data;
+  } catch (error: any) {
+    console.error("Client Prepare Error:", error);
     throw error;
   }
 }
