@@ -1,4 +1,5 @@
-const DASHSCOPE_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const DASHSCOPE_COMPATIBLE_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const DASHSCOPE_MULTIMODAL_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
 
 function getApiKey() {
   // 按照优先级尝试获取秘钥
@@ -24,7 +25,7 @@ export async function analyzePronunciation(referenceText: string, audioBase64: s
 3. 提供鼓励性的中文评语。
 4. 评估流利度。
 
-必须返回 JSON 格式:
+必须返回严格的 JSON 格式 (不要包含 Markdown 标记):
 {
   "rating": 数字,
   "feedback": "中文评语",
@@ -33,7 +34,7 @@ export async function analyzePronunciation(referenceText: string, audioBase64: s
 }`;
 
   try {
-    const response = await fetch(DASHSCOPE_ENDPOINT, {
+    const response = await fetch(DASHSCOPE_MULTIMODAL_ENDPOINT, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
@@ -41,16 +42,20 @@ export async function analyzePronunciation(referenceText: string, audioBase64: s
       },
       body: JSON.stringify({
         model: "qwen-audio-turbo",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "audio", audio_url: { url: `data:${mimeType};base64,${audioBase64}` } },
-              { type: "text", text: prompt }
-            ]
-          }
-        ],
-        response_format: { type: "json_object" }
+        input: {
+          messages: [
+            {
+              role: "user",
+              content: [
+                { audio: `data:${mimeType};base64,${audioBase64}` },
+                { text: prompt }
+              ]
+            }
+          ]
+        },
+        parameters: {
+          result_format: "message"
+        }
       })
     });
 
@@ -60,7 +65,7 @@ export async function analyzePronunciation(referenceText: string, audioBase64: s
     }
 
     const data = await response.json();
-    let content = data.choices[0].message.content;
+    let content = data.output.choices[0].message.content[0].text;
     
     // 兼容性处理：去除可能的 Markdown 标记
     if (content.includes('```json')) {
@@ -92,7 +97,7 @@ export async function prepareLesson(text: string) {
 }`;
 
   try {
-    const response = await fetch(DASHSCOPE_ENDPOINT, {
+    const response = await fetch(DASHSCOPE_COMPATIBLE_ENDPOINT, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
