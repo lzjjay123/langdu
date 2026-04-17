@@ -1,11 +1,23 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let genAI: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!genAI) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "undefined") {
+      throw new Error("GEMINI_API_KEY is not configured. Please add it to your secrets.");
+    }
+    genAI = new GoogleGenAI({ apiKey });
+  }
+  return genAI;
+}
 
 export async function analyzePronunciation(referenceText: string, audioBase64: string, mimeType: string) {
   const prompt = `Ref: "${referenceText}". Task: Compare audio vs Ref. Identify missing/wrong words. JSON: {rating:1-5, feedback:CN, corrections:[{word, errorType, suggestion:CN}], fluency:CN}. Focus on accuracy.`;
 
   try {
+    const ai = getAI();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [
@@ -59,6 +71,7 @@ export async function prepareLesson(text: string) {
   const prompt = `Split into sentences + CN translation. Text: "${text}". JSON: {sentences: [{english, chinese}]}`;
 
   try {
+    const ai = getAI();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
