@@ -262,9 +262,9 @@ export default function App() {
           const result = await analyzePronunciation(reference, base64data, blob.type);
           setAnalysisResult(result);
           setStage('result');
-        } catch (err) {
+        } catch (err: any) {
           console.error("Analysis inner error:", err);
-          alert('分析失败，请检查网络或重试。');
+          alert(`分析失败: ${err.message || '网络连接超时'}。请确保您的 API 秘钥可用且网络通畅。`);
         } finally {
           setIsLoading(false);
         }
@@ -504,12 +504,18 @@ export default function App() {
                 >
                   <ChevronLeft size={24} />
                 </button>
-                <div className="text-center px-4">
-                  <div className="flex gap-1.5">
-                    {sentences.map((_, i) => (
-                      <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === currentSentenceIdx ? 'bg-blue-500 w-6 sm:w-8' : 'bg-gray-200 w-2 sm:w-3'}`} />
-                    ))}
-                  </div>
+                <div className="text-center px-2 flex-1 flex justify-center overflow-hidden">
+                  {sentences.length <= 10 ? (
+                    <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5">
+                      {sentences.map((_, i) => (
+                        <div key={i} className={`h-1 sm:h-1.5 rounded-full transition-all duration-300 ${i === currentSentenceIdx ? 'bg-blue-500 w-4 sm:w-8' : 'bg-gray-200 w-1.5 sm:w-2'}`} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] sm:text-xs font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full">
+                      PROGRESS: {Math.round(((currentSentenceIdx + 1) / sentences.length) * 100)}%
+                    </div>
+                  )}
                 </div>
                 <button 
                   onClick={handleNextSentence}

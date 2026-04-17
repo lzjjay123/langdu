@@ -55,16 +55,24 @@ export async function analyzePronunciation(referenceText: string, audioBase64: s
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `API 请求失败: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || errorData.message || `API 请求失败: ${response.status}`);
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    let content = data.choices[0].message.content;
+    
+    // 兼容性处理：去除可能的 Markdown 标记
+    if (content.includes('```json')) {
+      content = content.split('```json')[1].split('```')[0].trim();
+    } else if (content.includes('```')) {
+      content = content.split('```')[1].split('```')[0].trim();
+    }
+    
     return JSON.parse(content);
-  } catch (error) {
-    console.error("Alibaba Analysis Error:", error);
-    throw error;
+  } catch (error: any) {
+    console.error("Alibaba Analysis API Error:", error);
+    throw new Error(error.message || "音频分析接口调用失败");
   }
 }
 
