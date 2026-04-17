@@ -21,7 +21,7 @@ import {
   History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { analyzePronunciation, prepareLesson } from './lib/gemini';
+import { analyzePronunciation, prepareLesson } from './lib/ai';
 
 // --- Types ---
 
@@ -138,9 +138,10 @@ export default function App() {
       setStage('learn');
       setCurrentSentenceIdx(0);
       setShowHistory(false);
-    } catch (err) {
-      console.error(err);
-      alert('准备课程失败，请重试。');
+    } catch (err: any) {
+      console.error("Preparation Error:", err);
+      const errorMessage = err?.message || '未知错误';
+      alert(`准备课程失败：${errorMessage}\n\n提示：如果您已部署到国内平台，请确保配置了 DASHSCOPE_API_KEY。`);
     } finally {
       setIsLoading(false);
     }
