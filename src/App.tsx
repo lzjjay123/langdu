@@ -140,8 +140,16 @@ export default function App() {
       setShowHistory(false);
     } catch (err: any) {
       console.error("Preparation Error:", err);
-      const errorMessage = err?.message || '未知错误';
-      alert(`准备课程失败：${errorMessage}\n\n解决办法：\n1. 如果已在 Netlify 设置环境变量，请在 Deploys 菜单选择 "Clear cache and deploy site" 重新部署一遍。\n2. 确保环境变量名完全一致：DASHSCOPE_API_KEY`);
+      if (err.isApiKeyError) {
+        const manualKey = window.prompt("检测到 API 密钥未配置成功。您可以直接在这里粘贴您的阿里云百炼 API Key (sk-...)，我们将为您保存在浏览器本地：");
+        if (manualKey) {
+          localStorage.setItem('CUSTOM_DASHSCOPE_API_KEY', manualKey.trim());
+          alert("密钥已保存！请再次点击“开始逐句学习”。");
+        }
+      } else {
+        const errorMessage = err?.message || '未知错误';
+        alert(`准备课程失败：${errorMessage}\n\n解决办法：\n1. 确保 Netlify 环境变量名：DASHSCOPE_API_KEY\n2. 确保已点击 "Clear cache and deploy site"`);
+      }
     } finally {
       setIsLoading(false);
     }
