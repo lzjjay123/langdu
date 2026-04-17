@@ -1,9 +1,9 @@
 const DASHSCOPE_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 
 function getApiKey() {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
-  if (!apiKey || apiKey === "undefined" || apiKey === "YOUR_DASHSCOPE_API_KEY") {
-    throw new Error("请在 Secrets 中配置 DASHSCOPE_API_KEY (阿里云百炼 API 密钥)");
+  const apiKey = process.env.DASHSCOPE_API_KEY || (import.meta as any).env?.VITE_DASHSCOPE_API_KEY;
+  if (!apiKey || apiKey === "undefined" || apiKey === "YOUR_DASHSCOPE_API_KEY" || apiKey === "") {
+    throw new Error("API 密钥未生效。提示：在部署平台配置环境后，必须重新触发部署（Clear cache and deploy）才能生效。");
   }
   return apiKey;
 }

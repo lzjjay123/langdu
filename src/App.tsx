@@ -141,7 +141,7 @@ export default function App() {
     } catch (err: any) {
       console.error("Preparation Error:", err);
       const errorMessage = err?.message || '未知错误';
-      alert(`准备课程失败：${errorMessage}\n\n提示：如果您已部署到国内平台，请确保配置了 DASHSCOPE_API_KEY。`);
+      alert(`准备课程失败：${errorMessage}\n\n解决办法：\n1. 如果已在 Netlify 设置环境变量，请在 Deploys 菜单选择 "Clear cache and deploy site" 重新部署一遍。\n2. 确保环境变量名完全一致：DASHSCOPE_API_KEY`);
     } finally {
       setIsLoading(false);
     }
