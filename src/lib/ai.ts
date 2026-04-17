@@ -26,7 +26,14 @@ export async function analyzePronunciation(referenceText: string, audioBase64: s
       body: JSON.stringify({ referenceText, audioBase64, mimeType })
     });
 
-    const data = await response.json();
+    const responseText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error("后台服务器忙（返回非 JSON），请稍后再试");
+    }
+
     if (!response.ok) {
       if (data.error?.includes("未配置 API Key")) {
         const error: any = new Error("API 密钥未生效。");
@@ -53,7 +60,14 @@ export async function prepareLesson(text: string) {
       body: JSON.stringify({ text })
     });
 
-    const data = await response.json();
+    const responseText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error("后台服务器忙（返回非 JSON），请稍后再试");
+    }
+
     if (!response.ok) {
       if (data.error?.includes("未配置 API Key")) {
         const error: any = new Error("API 密钥未生效。");

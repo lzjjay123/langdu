@@ -45,7 +45,7 @@ async function startServer() {
                 role: "user",
                 content: [
                   { audio: `data:${mimeType};base64,${audioBase64}` },
-                  { text: `你是一位专业的少儿英语老师。参考文本: "${referenceText}"。任务: 比较音频与文本。必须返回严格 JSON: {"rating":数字, "feedback":"评语", "corrections":[{"word":"单词", "errorType":"skipped"|"mispronounced", "suggestion":"建议"}], "fluency":"评价"}` }
+                  { text: `你是一位专业的少儿英语老师。参考文本: "${referenceText}"。任务: 比较音频与文本。必须返回严格 JSON 格式: {"rating":数字, "feedback":"评语", "corrections":[{"word":"单词", "errorType":"skipped"|"mispronounced", "suggestion":"建议"}], "fluency":"评价"}` }
                 ]
               }
             ]
@@ -54,10 +54,20 @@ async function startServer() {
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "阿里云接口错误");
+      const responseText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`阿里云服务器返回了异常格式: ${responseText.substring(0, 100)}...`);
+      }
 
-      let content = data.output.choices[0].message.content[0].text;
+      if (!response.ok) throw new Error(data.message || data.error?.message || "阿里云接口错误");
+
+      const choices = data.output?.choices;
+      if (!choices || choices.length === 0) throw new Error("AI 没能给出有效的评价，请重新录制试一下");
+
+      let content = choices[0].message.content[0].text;
       
       // Clean up markdown
       if (content.includes('```json')) content = content.split('```json')[1].split('```')[0].trim();
