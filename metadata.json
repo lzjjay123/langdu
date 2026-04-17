@@ -1,0 +1,11 @@
+{
+  "name": "English Recitation Pal",
+  "description": "帮助孩子背诵英语段落，纠正发音并分析错误。提供逐步隐藏单词辅助记忆，以及AI发音分析功能。",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "AI-powered speech analysis",
+    "Progressive memorization helper"
+  ]
+}
