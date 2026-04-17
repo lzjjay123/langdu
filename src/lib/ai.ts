@@ -31,16 +31,22 @@ export async function analyzePronunciation(referenceText: string, audioBase64: s
     try {
       data = JSON.parse(responseText);
     } catch (e) {
-      throw new Error("后台服务器忙（返回非 JSON），请稍后再试");
+      const snippet = responseText.substring(0, 100);
+      throw new Error(`分析服务器异常 (${response.status}): ${snippet || "无内容"}`);
     }
 
     if (!response.ok) {
-      if (data.error?.includes("未配置 API Key")) {
-        const error: any = new Error("API 密钥未生效。");
+      const errorMsg = data.error || data.message || "音频分析失败";
+      // 检查是否为 API Key 相关错误
+      if (errorMsg.includes("未配置 API Key") || 
+          errorMsg.toLowerCase().includes("invalid api key") || 
+          errorMsg.toLowerCase().includes("authentication") ||
+          response.status === 401) {
+        const error: any = new Error(`API 密钥无效或未配置: ${errorMsg}\n\n请检查您的阿里云 DashScope 密钥并重新设置。`);
         error.isApiKeyError = true;
         throw error;
       }
-      throw new Error(data.error || "音频分析失败");
+      throw new Error(errorMsg);
     }
     return data;
   } catch (error: any) {
@@ -65,16 +71,22 @@ export async function prepareLesson(text: string) {
     try {
       data = JSON.parse(responseText);
     } catch (e) {
-      throw new Error("后台服务器忙（返回非 JSON），请稍后再试");
+      const snippet = responseText.substring(0, 100);
+      throw new Error(`课程准备服务器异常 (${response.status}): ${snippet || "无内容"}`);
     }
 
     if (!response.ok) {
-      if (data.error?.includes("未配置 API Key")) {
-        const error: any = new Error("API 密钥未生效。");
+      const errorMsg = data.error || data.message || "准备课程失败";
+      // 检查是否为 API Key 相关错误
+      if (errorMsg.includes("未配置 API Key") || 
+          errorMsg.toLowerCase().includes("invalid api key") || 
+          errorMsg.toLowerCase().includes("authentication") ||
+          response.status === 401) {
+        const error: any = new Error(`API 密钥无效或未配置: ${errorMsg}\n\n请检查您的阿里云 DashScope 密钥并重新设置。`);
         error.isApiKeyError = true;
         throw error;
       }
-      throw new Error(data.error || "准备课程失败");
+      throw new Error(errorMsg);
     }
     return data;
   } catch (error: any) {

@@ -12,7 +12,14 @@ async function startServer() {
   const PORT = 3000;
 
   // Middleware for JSON body parsing
-  app.use(express.json({ limit: "50mb" }));
+  app.use(express.json({ limit: "100mb" }));
+  app.use(express.urlencoded({ limit: "100mb", extended: true }));
+
+  // Request logger
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${req.get('content-length') || 0} bytes`);
+    next();
+  });
 
   function getApiKey(req: express.Request) {
       // 优先级：请求头传入的自定义Key > 环境变量
