@@ -3,16 +3,29 @@ import { GoogleGenAI, Type } from "@google/genai";
 // Initialize Gemini
 const getApiKey = () => {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    console.warn("GEMINI_API_KEY is not set. AI features will be unavailable.");
-    return "NO_KEY";
+  // 检查常见的空值或占位符
+  if (!key || key === "undefined" || key === "null" || key === "" || key === "NO_KEY") {
+    console.warn("GEMINI_API_KEY is not set. Please configure it in your environment variables/Netlify settings.");
+    return null;
   }
   return key;
 };
 
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
+const apiKey = getApiKey();
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
+/**
+ * 语音发音分析
+ */
 export async function analyzePronunciation(referenceText: string, audioBase64: string, mimeType: string) {
+  if (!ai) {
+    return { 
+      score: 0, 
+      feedback: "请在环境变量中设置 GEMINI_API_KEY 后使用 AI 评分功能。", 
+      detail: "Missing API Key" 
+    };
+  }
+
   try {
     const prompt = `你是一位专业的少儿英语老师。
 参考文本: "${referenceText}"
@@ -90,6 +103,13 @@ export function splitSentencesLocally(text: string) {
 }
 
 export async function prepareLesson(text: string) {
+  if (!ai) {
+    return { 
+      sentences: splitSentencesLocally(text),
+      vocabulary: {}
+    };
+  }
+
   try {
     const prompt = `将以下英文文本切分为适合孩子学习的句子，并提供对应的中文翻译。
 文本: "${text}"`;
@@ -141,7 +161,7 @@ export async function prepareLesson(text: string) {
  * 获取单词及其简洁的中文翻译
  */
 export async function translateWord(word: string): Promise<string> {
-  // 扩展本地映射作为极速兜底和防错处理
+  // 大幅扩展本地映射作为极速兜底和防错处理，通过离线常用词掩盖网络抖动
   const localDict: Record<string, string> = {
     "hello": "你好", "world": "世界", "good": "好", "bad": "差", "apple": "苹果",
     "book": "书", "school": "学校", "student": "学生", "teacher": "老师", 
@@ -149,11 +169,19 @@ export async function translateWord(word: string): Promise<string> {
     "china": "中国", "friend": "朋友", "cat": "猫", "dog": "狗",
     "boy": "男孩", "girl": "女孩", "water": "水", "food": "食物", "sun": "太阳",
     "moon": "月亮", "star": "星星", "tree": "树", "flower": "花", "red": "红色",
-    "blue": "蓝色", "green": "绿色", "yellow": "黄色", "black": "黑色", "white": "白色"
+    "blue": "蓝色", "green": "绿色", "yellow": "黄色", "black": "黑色", "white": "白色",
+    "run": "跑", "walk": "走", "eat": "吃", "sleep": "睡觉", "play": "玩", 
+    "happy": "快乐", "sad": "难过", "big": "大", "small": "小", "hot": "热", "cold": "冷",
+    "father": "父亲", "mother": "母亲", "brother": "兄弟", "sister": "姐妹",
+    "morning": "早上", "night": "晚上", "day": "白天", "time": "时间", "home": "家",
+    "pen": "笔", "bag": "包", "desk": "书桌", "chair": "椅子", "bird": "鸟", "fish": "鱼"
   };
 
   const lowerWord = word.toLowerCase().trim().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g,"");
   if (localDict[lowerWord]) return localDict[lowerWord];
+
+  // 如果没有 AI 实例，直接返回提示（由于上面的 localDict 已经覆盖了常见词，这能改善体验）
+  if (!ai) return "需配置AI秘钥";
 
   try {
     const response = await ai.models.generateContent({
