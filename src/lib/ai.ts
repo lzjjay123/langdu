@@ -1,7 +1,16 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getApiKey = () => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    console.warn("GEMINI_API_KEY is not set. AI features will be unavailable.");
+    return "NO_KEY";
+  }
+  return key;
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 export async function analyzePronunciation(referenceText: string, audioBase64: string, mimeType: string) {
   try {
