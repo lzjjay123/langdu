@@ -17,18 +17,26 @@ async function startServer() {
 
   // Vite middleware...
   if (process.env.NODE_ENV !== "production") {
+    console.log("Starting in development mode with Vite middleware...");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
+    console.log("Starting in production mode...");
     const distPath = path.join(process.cwd(), "dist");
     if (fs.existsSync(distPath)) {
-        app.use(express.static(distPath));
-        app.get("*", (req, res) => {
-            res.sendFile(path.join(distPath, "index.html"));
-        });
+      console.log(`Serving static files from: ${distPath}`);
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    } else {
+      console.error("Critical Error: 'dist' directory not found! Have you run 'npm run build'?");
+      app.get("*", (req, res) => {
+        res.status(500).send("Application not built. Please contact support.");
+      });
     }
   }
 
