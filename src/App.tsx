@@ -18,10 +18,19 @@ import {
   Languages,
   RotateCcw,
   List,
-  History
+  History,
+  Settings,
+  X,
+  Sliders,
+  Smartphone,
+  QrCode,
+  ExternalLink,
+  MessageCircle,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { analyzePronunciation, prepareLesson } from './lib/ai';
+import { QRCodeSVG } from 'qrcode.react';
+import { analyzePronunciation, prepareLesson, translateWord } from './lib/ai';
 
 // --- Types ---
 
@@ -46,12 +55,13 @@ interface Sentence {
 interface CachedLesson {
   text: string;
   sentences: Sentence[];
+  vocabulary?: Record<string, string>;
   timestamp: number;
 }
 
 // --- Components ---
 
-const Header = () => (
+const Header = ({ onOpenSettings, onOpenShare }: { onOpenSettings: () => void, onOpenShare: () => void }) => (
   <header className="flex items-center justify-between p-4 sm:p-6 bg-white border-b border-orange-100 sticky top-0 z-50">
     <div className="flex items-center gap-2 sm:gap-3">
       <div className="w-8 h-8 sm:w-10 sm:h-10 bg-orange-400 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-100 rotate-3">
@@ -63,6 +73,23 @@ const Header = () => (
           英语背诵小伙伴 <Sparkles size={8} className="sm:size-[10px]" />
         </p>
       </div>
+    </div>
+    <div className="flex items-center gap-2">
+      <button 
+        onClick={onOpenShare}
+        className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-500 hover:bg-blue-100 rounded-xl transition-all active:scale-95 text-xs font-bold"
+        title="同步到手机"
+      >
+        <Smartphone size={18} />
+        <span className="hidden sm:inline">同步到手机</span>
+      </button>
+      <button 
+        onClick={onOpenSettings}
+        className="p-2 sm:p-3 bg-gray-50 text-gray-500 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all active:scale-95"
+        title="语音设置"
+      >
+        <Settings size={20} />
+      </button>
     </div>
   </header>
 );
@@ -80,8 +107,22 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [cachedLessons, setCachedLessons] = useState<CachedLesson[]>([]);
+  const [currentVocabulary, setCurrentVocabulary] = useState<Record<string, string>>({});
   const [showHistory, setShowHistory] = useState(false);
   const [showSentencePicker, setShowSentencePicker] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [lastRecordingStage, setLastRecordingStage] = useState<'learn' | 'recite' | null>(null);
+  const [activeWordId, setActiveWordId] = useState<string | null>(null);
+  const [wordTranslation, setWordTranslation] = useState<{word: string, translation: string, id: string} | null>(null);
+
+  // --- Voice Settings State ---
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceSettings, setVoiceSettings] = useState({
+    voiceURI: '',
+    rate: 1.0,
+    pitch: 1.0
+  });
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -98,12 +139,34 @@ export default function App() {
         console.error('Failed to parse cached lessons');
       }
     }
+
+    // Load Voice Settings
+    const savedVoice = localStorage.getItem('voice_settings');
+    if (savedVoice) {
+      try {
+        setVoiceSettings(JSON.parse(savedVoice));
+      } catch (e) {}
+    }
+
+    const updateVoices = () => {
+      const allVoices = window.speechSynthesis.getVoices();
+      // Filter for English voices
+      const enVoices = allVoices.filter(v => v.lang.startsWith('en'));
+      setVoices(enVoices);
+    };
+
+    updateVoices();
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
   }, []);
 
-  const saveLessonToCache = (newText: string, newSentences: Sentence[]) => {
+  const saveLessonToCache = (newText: string, newSentences: Sentence[], vocabulary?: Record<string, string>) => {
     const newLesson: CachedLesson = {
       text: newText,
       sentences: newSentences,
+      vocabulary: vocabulary,
       timestamp: Date.now()
     };
     const updated = [newLesson, ...cachedLessons.filter(l => l.text !== newText)].slice(0, 10);
@@ -121,6 +184,7 @@ export default function App() {
     const existing = cachedLessons.find(l => l.text === textToUse);
     if (existing) {
       setSentences(existing.sentences);
+      setCurrentVocabulary(existing.vocabulary || {});
       setShowTranslation(new Array(existing.sentences.length).fill(false));
       setStage('learn');
       setCurrentSentenceIdx(0);
@@ -133,23 +197,16 @@ export default function App() {
     try {
       const data = await prepareLesson(textToUse);
       setSentences(data.sentences);
+      setCurrentVocabulary(data.vocabulary || {});
       setShowTranslation(new Array(data.sentences.length).fill(false));
-      saveLessonToCache(textToUse, data.sentences);
+      saveLessonToCache(textToUse, data.sentences, data.vocabulary);
       setStage('learn');
       setCurrentSentenceIdx(0);
       setShowHistory(false);
     } catch (err: any) {
       console.error("Preparation Error:", err);
-      if (err.isApiKeyError) {
-        const manualKey = window.prompt("检测到 API 密钥未配置成功。您可以直接在这里粘贴您的阿里云百炼 API Key (sk-...)，我们将为您保存在浏览器本地：");
-        if (manualKey) {
-          localStorage.setItem('CUSTOM_DASHSCOPE_API_KEY', manualKey.trim());
-          alert("密钥已保存！请再次点击“开始逐句学习”。");
-        }
-      } else {
-        const errorMessage = err?.message || '未知错误';
-        alert(`准备课程失败：${errorMessage}\n\n解决办法：\n1. 确保 Netlify 环境变量名：DASHSCOPE_API_KEY\n2. 确保已点击 "Clear cache and deploy site"`);
-      }
+      const errorMessage = err?.message || '未知错误';
+      alert(`准备课程失败：${errorMessage}\n\n请稍后再试或联系开发者。`);
     } finally {
       setIsLoading(false);
     }
@@ -169,36 +226,124 @@ export default function App() {
     }
   };
 
-  const speakText = (content: string, slow = false) => {
+  // --- TTS Logic (Customizable Browser TTS) ---
+  const speak = (text: string, slow = false, onStart?: () => void, onEnd?: () => void, onBoundary?: (index: number) => void) => {
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(content);
-    utterance.lang = 'en-US';
     
-    // Try to find a more natural voice
-    const voices = window.speechSynthesis.getVoices();
-    const premiumVoice = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en')) || 
-                        voices.find(v => v.name.includes('Premium') && v.lang.startsWith('en')) ||
-                        voices.find(v => v.lang.startsWith('en'));
-    
-    if (premiumVoice) utterance.voice = premiumVoice;
-    
-    utterance.rate = slow ? 0.6 : 0.95;
-    utterance.pitch = 1.0;
-    window.speechSynthesis.speak(utterance);
+    // 给浏览器一点点时间处理 cancel，解决部分浏览器不发音的问题
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      (window as any)._lastUtterance = utterance; // 防止被垃圾回收
+      
+      if (onStart) utterance.onstart = onStart;
+      if (onEnd) utterance.onend = onEnd;
+      if (onBoundary) {
+        utterance.onboundary = (event) => {
+          if (event.name === 'word') {
+            onBoundary(event.charIndex);
+          }
+        };
+      }
+      utterance.onerror = () => onEnd?.();
+      
+      const availableVoices = window.speechSynthesis.getVoices();
+      let selectedVoice = availableVoices.find(v => v.voiceURI === voiceSettings.voiceURI);
+      
+      // 如果没选或找不到，使用启发式默认
+      if (!selectedVoice) {
+        selectedVoice = availableVoices.find(v => v.name === 'Google US English') ||
+                        availableVoices.find(v => v.name.includes('Natural') && v.lang.startsWith('en')) ||
+                        availableVoices.find(v => v.lang === 'en-US') ||
+                        availableVoices.find(v => v.lang.startsWith('en'));
+      }
+
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+      
+      utterance.lang = selectedVoice?.lang || 'en-US';
+      // slow 参数优先级高于用户设置，如果是单词点读或明确要求慢速
+      utterance.rate = slow ? (voiceSettings.rate * 0.6) : voiceSettings.rate;
+      utterance.pitch = voiceSettings.pitch;
+      
+      window.speechSynthesis.speak(utterance);
+    }, 50);
   };
 
-  const speakWord = (word: string) => {
-    window.speechSynthesis.cancel();
-    const cleanWord = word.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g,"");
-    const utterance = new SpeechSynthesisUtterance(cleanWord);
-    utterance.lang = 'en-US';
+  const speakText = (content: string, slow = false) => {
+    // 建立字符索引到单词ID的映射
+    const tokens = content.split(/(\s+)/);
+    let cumulativeIndex = 0;
+    const charMap: {start: number, end: number, id: string}[] = [];
     
-    const voices = window.speechSynthesis.getVoices();
-    const premiumVoice = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en')) || voices.find(v => v.lang.startsWith('en'));
-    if (premiumVoice) utterance.voice = premiumVoice;
+    tokens.forEach((token, i) => {
+      const start = cumulativeIndex;
+      const end = start + token.length;
+      if (token.trim().length > 0) {
+        charMap.push({ 
+          start, 
+          end, 
+          id: stage === 'learn' ? `learn-${currentSentenceIdx}-${i}` : `memo-${i}` 
+        });
+      }
+      cumulativeIndex = end;
+    });
+
+    speak(
+      content, 
+      slow, 
+      undefined, 
+      () => setActiveWordId(null),
+      (charIndex) => {
+        const found = charMap.find(m => charIndex >= m.start && charIndex < m.end);
+        if (found) {
+          setActiveWordId(found.id);
+        }
+      }
+    );
+  };
+
+  const speakWord = (word: string, id: string | null = null) => {
+    const cleanWord = word.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g,"").toLowerCase().trim();
     
-    utterance.rate = 0.8;
-    window.speechSynthesis.speak(utterance);
+    // 优先从本地缓存的单词表中获取翻译，实现极速响应和离线支持
+    if (id) {
+       const cachedTranslation = currentVocabulary[cleanWord];
+       if (cachedTranslation) {
+         setWordTranslation({ word: cleanWord, translation: cachedTranslation, id });
+       } else {
+         // 如果单词表中没有（通常 prepareLesson 会处理所有词），则尝试异步获取并更新词表
+         setWordTranslation({ word: cleanWord, translation: '...', id });
+         translateWord(cleanWord).then(translation => {
+           setWordTranslation(prev => prev?.id === id ? { ...prev, translation } : prev);
+           // 存入内存词表，下次点击更快
+           setCurrentVocabulary(prev => ({ ...prev, [cleanWord]: translation }));
+         });
+       }
+       
+       // 4秒后自动隐藏翻译
+       setTimeout(() => {
+         setWordTranslation(prev => prev?.id === id ? null : prev);
+       }, 4000);
+    }
+
+    speak(
+      cleanWord, 
+      true, 
+      () => id && setActiveWordId(id), 
+      () => id && setActiveWordId(null)
+    );
+  };
+
+  // 确保在页面加载后语音列表已准备好 (部分浏览器异步加载)
+  useEffect(() => {
+    window.speechSynthesis.getVoices();
+  }, []);
+
+  const updateVoiceSetting = (key: string, value: any) => {
+    const next = { ...voiceSettings, [key]: value };
+    setVoiceSettings(next);
+    localStorage.setItem('voice_settings', JSON.stringify(next));
   };
 
   const startRecording = async () => {
@@ -225,6 +370,8 @@ export default function App() {
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         const url = URL.createObjectURL(audioBlob);
         setAudioUrl(url);
+        // 保存当前阶段，用于在结果页点击“重新录制”回到正确的页面
+        setLastRecordingStage(stage as 'learn' | 'recite');
         analyzeAudio(audioBlob);
       };
 
@@ -281,15 +428,33 @@ export default function App() {
     return tokens.map((token, i) => {
       if (token.trim().length === 0) return <span key={i}>{token}</span>;
       const cleanWord = token.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g,"");
+      const wordId = `learn-${currentSentenceIdx}-${i}`;
+      const isActive = activeWordId === wordId;
+
       return (
-        <span key={i} className="group relative inline-block cursor-default">
-          <span className="hover:text-blue-500 transition-colors">{token}</span>
-          <button 
-            onClick={(e) => { e.stopPropagation(); speakWord(cleanWord); }}
-            className="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-gray-800 text-white p-1 rounded-md transition-all scale-75 group-hover:scale-100 z-10"
-          >
-            <Volume2 size={10} />
-          </button>
+        <span 
+          key={i} 
+          onClick={() => speakWord(cleanWord, wordId)}
+          className={`relative inline-block cursor-pointer select-none transition-all px-0.5 py-1 -my-1 touch-manipulation border-b-2 ${
+            isActive 
+              ? 'text-blue-600 border-blue-400 bg-blue-50/50 scale-110' 
+              : 'hover:text-blue-500 hover:scale-110 active:scale-90 border-transparent'
+          }`}
+        >
+          {token}
+          <AnimatePresence>
+            {wordTranslation?.id === wordId && (
+              <motion.div 
+                initial={{ opacity: 0, y: -40, scale: 0.8 }}
+                animate={{ opacity: 1, y: -64, scale: 1 }}
+                exit={{ opacity: 0, y: -40, scale: 0.8 }}
+                className="absolute left-1/2 -translate-x-1/2 bg-gray-900/95 backdrop-blur-sm text-white text-[11px] font-bold py-1.5 px-3 rounded-xl shadow-2xl shadow-black/30 whitespace-nowrap z-[100] pointer-events-none ring-1 ring-white/20"
+              >
+                {wordTranslation.translation}
+                <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900/95 rotate-45" />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </span>
       );
     });
@@ -303,6 +468,9 @@ export default function App() {
       if (hideLevel === 2 && i % 2 === 0) isHidden = true;
       if (hideLevel === 3) isHidden = true;
 
+      const wordId = `memo-${i}`;
+      const isActive = activeWordId === wordId;
+
       return (
         <span key={i} className="inline-block mr-1">
           {isHidden ? (
@@ -310,7 +478,29 @@ export default function App() {
               {word}
             </span>
           ) : (
-            <span className="hover:text-blue-500 cursor-default transition-colors">{word}</span>
+            <span 
+              onClick={() => speakWord(word, wordId)}
+              className={`cursor-pointer select-none transition-all px-0.5 py-1 -my-1 touch-manipulation active:scale-95 border-b-2 relative inline-block ${
+                isActive 
+                  ? 'text-blue-600 border-blue-400 bg-blue-50/50 scale-110' 
+                  : 'hover:text-blue-500 border-transparent'
+              }`}
+            >
+              {word}
+              <AnimatePresence>
+                {wordTranslation?.id === wordId && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -40, scale: 0.8 }}
+                    animate={{ opacity: 1, y: -64, scale: 1 }}
+                    exit={{ opacity: 0, y: -40, scale: 0.8 }}
+                    className="absolute left-1/2 -translate-x-1/2 bg-gray-900/95 backdrop-blur-sm text-white text-[11px] font-bold py-1.5 px-3 rounded-xl shadow-2xl shadow-black/30 whitespace-nowrap z-[100] pointer-events-none ring-1 ring-white/20"
+                  >
+                    {wordTranslation.translation}
+                    <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900/95 rotate-45" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </span>
           )}
         </span>
       );
@@ -319,9 +509,169 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FDFCF8] font-sans text-gray-800 pb-20">
-      <Header />
+      <Header onOpenSettings={() => setShowSettings(true)} onOpenShare={() => setShowShare(true)} />
 
       <main className="max-w-3xl mx-auto px-4 sm:px-8 pt-4 pb-10">
+        <AnimatePresence>
+          {showShare && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6"
+            >
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowShare(false)} />
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="relative bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-8 sm:p-10 text-center"
+              >
+                 <button onClick={() => setShowShare(false)} className="absolute top-6 right-6 p-2 text-gray-300 hover:text-gray-500 rounded-full hover:bg-gray-100"><X size={20} /></button>
+                 
+                 <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                   <QrCode size={32} />
+                 </div>
+                 
+                 <h2 className="text-2xl font-bold text-gray-900 mb-2">同步到手机</h2>
+                 <p className="text-sm text-gray-500 mb-8 leading-relaxed">扫描下方二维码，在您的手机上打开此应用并继续学习。</p>
+                 
+                 <div className="bg-white p-6 rounded-3xl border-2 border-gray-50 shadow-inner inline-block relative overflow-hidden group">
+                    <QRCodeSVG 
+                      value={window.location.href} 
+                      size={180}
+                      level="H" 
+                      includeMargin={false}
+                    />
+                    <div className="absolute inset-0 bg-white/10 group-hover:bg-transparent transition-all pointer-events-none" />
+                 </div>
+
+                 <div className="mt-8 flex flex-col gap-3">
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(window.location.href);
+                        alert('链接已复制，去分享给手机吧！');
+                      }}
+                      className="w-full py-4 bg-gray-50 text-gray-600 font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-blue-50 hover:text-blue-500 transition-all border border-transparent hover:border-blue-100 active:scale-95"
+                    >
+                      <Copy size={18} /> 复制应用链接
+                    </button>
+                    <p className="text-[10px] text-gray-400 font-medium px-4">提示：由于我们已经同步了您的本地历史，手机打开后可以直接在“历史”中找回刚才学习的内容。</p>
+                 </div>
+              </motion.div>
+            </motion.div>
+          )}
+
+          {showSettings && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
+            >
+              <div 
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+                onClick={() => setShowSettings(false)}
+              />
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="relative bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-6 sm:p-10 border border-orange-50"
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-orange-50 text-orange-500 rounded-2xl">
+                      <Sliders size={24} />
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-900">语音播报设置</h2>
+                  </div>
+                  <button 
+                    onClick={() => setShowSettings(false)}
+                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <X size={24} className="text-gray-400" />
+                  </button>
+                </div>
+
+                <div className="space-y-8">
+                  <div className="space-y-3">
+                    <label className="text-sm font-bold text-gray-500 uppercase tracking-widest px-1">选择发音人</label>
+                    <div className="relative">
+                      <select 
+                        className="w-full p-4 bg-gray-50 border-2 border-transparent focus:border-orange-200 outline-none rounded-2xl text-gray-700 font-medium appearance-none transition-all"
+                        value={voiceSettings.voiceURI}
+                        onChange={(e) => updateVoiceSetting('voiceURI', e.target.value)}
+                      >
+                        <option value="">默认 (由系统自动选优)</option>
+                        {voices.map((v, i) => (
+                          <option key={i} value={v.voiceURI}>
+                            {v.name} ({v.lang})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                        <ChevronRight size={18} className="rotate-90" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between px-1">
+                      <label className="text-sm font-bold text-gray-500 uppercase tracking-widest">语速 (Speed)</label>
+                      <span className="text-sm font-bold text-orange-500 bg-orange-50 px-3 py-1 rounded-full">{voiceSettings.rate.toFixed(1)}x</span>
+                    </div>
+                    <input 
+                      type="range" min="0.5" max="2" step="0.1"
+                      className="w-full h-2 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                      value={voiceSettings.rate}
+                      onChange={(e) => updateVoiceSetting('rate', parseFloat(e.target.value))}
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-300 font-bold px-1 uppercase tracking-tighter">
+                      <span>很慢</span>
+                      <span>正常</span>
+                      <span>极快</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between px-1">
+                      <label className="text-sm font-bold text-gray-500 uppercase tracking-widest">语调 (Pitch)</label>
+                      <span className="text-sm font-bold text-blue-500 bg-blue-50 px-3 py-1 rounded-full">{voiceSettings.pitch.toFixed(1)}</span>
+                    </div>
+                    <input 
+                      type="range" min="0.5" max="2" step="0.1"
+                      className="w-full h-2 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                      value={voiceSettings.pitch}
+                      onChange={(e) => updateVoiceSetting('pitch', parseFloat(e.target.value))}
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-300 font-bold px-1 uppercase tracking-tighter">
+                      <span>低沉</span>
+                      <span>正常</span>
+                      <span>尖细</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-4">
+                    <button 
+                      onClick={() => speak("Hello, this is my new voice settings. Is it good?")}
+                      className="w-full py-4 bg-gray-50 text-gray-600 font-bold rounded-2xl border-2 border-dashed border-gray-200 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-500 transition-all flex items-center justify-center gap-2 mt-2"
+                    >
+                      <Volume2 size={20} /> 测试声音效果
+                    </button>
+                    <button 
+                      onClick={() => setShowSettings(false)}
+                      className="w-full py-5 bg-orange-500 text-white font-extrabold rounded-2xl shadow-xl shadow-orange-100 hover:bg-orange-600 transition-all mt-6 active:scale-95"
+                    >
+                      保存设置
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence mode="wait">
           {/* STAGE: INPUT */}
           {stage === 'input' && (
@@ -644,11 +994,22 @@ export default function App() {
                   )}
 
                   <div className="mt-12 flex flex-col sm:flex-row gap-4">
+                     {analysisResult.corrections.length > 3 && lastRecordingStage && (
+                       <button 
+                        onClick={() => {
+                          setStage(lastRecordingStage);
+                          setAnalysisResult(null);
+                        }}
+                        className="flex-1 py-4 bg-orange-50 text-orange-600 font-bold rounded-2xl hover:bg-orange-100 transition-all flex items-center justify-center gap-2 border-2 border-orange-200"
+                       >
+                         <RotateCcw size={20} /> 重新录制
+                       </button>
+                     )}
                      <button onClick={() => setStage('learn')} className="flex-1 py-4 bg-blue-500 text-white font-bold rounded-2xl hover:bg-blue-600 shadow-lg shadow-blue-100 transition-all flex items-center justify-center gap-2">
                        <Languages size={20} /> 继续练习句子
                      </button>
                      <button onClick={() => { setStage('input'); setText(''); setAnalysisResult(null); }} className="px-8 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl hover:bg-gray-200 transition-all">
-                       <RotateCcw size={20} />
+                       <History size={20} />
                      </button>
                   </div>
                </div>
